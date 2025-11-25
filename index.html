@@ -30,32 +30,35 @@
     background-color: #fff;
     border-radius: 15px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 1.5rem;
-    font-weight: bold;
-    color: #333;
-    position: relative;
+    position: relative; /* 画像を重ねる基準 */
     overflow: hidden;
     border: 3px solid #ddd;
     transition: border-color 0.1s, background-color 0.1s;
-    transform: translateZ(0); /* ハードウェアアクセラレーション有効化 */
+    /* GPUアクセラレーションを強制して描画を高速化 */
+    transform: translateZ(0);
+    will-change: background-color, border-color;
   }
 
-  /* 画像を最初から配置しておく（表示はしない） */
+  /* 画像を絶対配置で重ねる（透明人間作戦） */
   .game-img {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      margin: auto;
       max-width: 100%;
       max-height: 100%;
       object-fit: contain;
-      border-radius: 12px;
-      display: none; /* 通常は非表示 */
-      pointer-events: none;
+      opacity: 0; /* 最初は透明にしておく */
+      transition: none; /* アニメーションなしで瞬時に切り替え */
+      pointer-events: none; /* 画像自体はクリックの邪魔をしない */
+      will-change: opacity; /* ブラウザに「これ変わるよ」と伝えて準備させる */
   }
 
-  /* このクラスがついた画像だけ表示する */
+  /* 表示用クラス */
   .game-img.show {
-      display: block;
+      opacity: 1; /* 不透明（見える）にする */
   }
 
   #game-area.active {
@@ -124,6 +127,9 @@
 
   #countdown {
       position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
       font-size: 4rem;
       color: #ff6b6b;
       display: none;
@@ -135,7 +141,7 @@
 
 <h1>よちゲーム！</h1>
 
-<div id="status-message">画像を読み込んでいます...</div>
+<div id="status-message">画像をデコード中...</div>
 
 <div id="game-area">
     <img id="img-target" class="game-img" src="target.png" alt="彼女">
@@ -165,7 +171,7 @@
   const countdownSpan = document.getElementById('countdown');
   const statusMessage = document.getElementById('status-message');
   
-  // 画像要素を直接リスト化
+  // 画像要素リスト
   const targetImgEl = document.getElementById('img-target');
   const otherImgEls = [
       document.getElementById('img-other1'),
@@ -184,17 +190,35 @@
   const maxTrials = 10;
   let trialTimeout;
 
-  // --- 画像読み込み完了チェック ---
-  window.onload = () => {
-      // 画面が開いて少し経ったらスタート可能にする
-      setTimeout(() => {
-          startBtn.disabled = false;
-          startBtn.classList.add('ready');
-          startBtn.textContent = "スタート！";
-          statusMessage.textContent = "準備完了！";
-      }, 500);
-  };
-  // ------------------------------
+  // --- 強制デコード処理 (Lag Fix) ---
+  // 画像をただ読み込むだけでなく、GPU/CPUに「描画準備」まで完了させる
+  async function prepareImages() {
+      const promises = allImgEls.map(img => {
+          if (img.decode) {
+              return img.decode().catch(() => {
+                  console.error("画像のデコードに失敗:", img.src);
+              });
+          } else {
+              // 古いブラウザ用フォールバック（Pixel 7aなら不要だが念のため）
+              return new Promise(resolve => {
+                  if(img.complete) resolve();
+                  else img.onload = resolve;
+              });
+          }
+      });
+
+      await Promise.all(promises);
+      
+      // 全て完了したらボタン有効化
+      startBtn.disabled = false;
+      startBtn.classList.add('ready');
+      startBtn.textContent = "スタート！";
+      statusMessage.textContent = "準備完了！";
+  }
+
+  // ページを開いたら即座に準備開始
+  prepareImages();
+  // --------------------------------
 
   startBtn.addEventListener('click', startGame);
   gameArea.addEventListener('touchstart', handleTap); 
@@ -258,11 +282,11 @@
         selectedImg = otherImgEls[Math.floor(Math.random() * otherImgEls.length)];
       }
       
-      // クラスを付け替えるだけで表示（これが最速）
+      // 透明度を1にする（計算済みなので一瞬で出るはず）
       selectedImg.classList.add('show');
       gameArea.classList.add('active');
       
-      // 描画タイミングを同期させて計測開始
+      // 描画フレームに同期
       requestAnimationFrame(() => {
           setTimeout(() => {
               startTime = Date.now();
@@ -277,14 +301,14 @@
   }
 
   function startMissTimeout() {
-      // ▼▼▼ ここを0.8秒 (800ms) に設定しました ▼▼▼
+      // 0.8秒制限
       trialTimeout = setTimeout(() => {
           if(waitingForReaction) {
             waitingForReaction = false;
             
             if(currentTargetIsTarget) {
                 missCount++;
-                statusMessage.textContent = '遅い！ミスです'; // メッセージも変更
+                statusMessage.textContent = '遅い！ミスです'; 
                 flashArea('miss-flash'); 
             } else {
                 statusMessage.textContent = 'スルー成功！';
@@ -292,7 +316,6 @@
             setTimeout(nextTrial, 700);
           }
       }, 800); // 0.8秒
-      // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
   }
 
   function handleTap(e) {
