@@ -1,107 +1,295 @@
-<!DOCT<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>よちゲーム！</title>
 <style>
-  body { font-family: sans-serif; text-align: center; padding: 20px; background-color: #f0f0f0; }
-  #game-area { width: 100%; height: 300px; background: #fff; display: flex; align-items: center; justify-content: center; border: 2px solid #333; margin-bottom: 20px; overflow: hidden; }
-  img { max-width: 100%; max-height: 100%; object-fit: contain; }
-  .btn { padding: 15px 30px; font-size: 18px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
-  .hidden { display: none; }
-  #status { font-size: 20px; font-weight: bold; margin-bottom: 10px; }
-  #result { margin-top: 20px; font-weight: bold; color: #d32f2f; }
+  body {
+    margin: 0;
+    font-family: sans-serif;
+    background-color: #f0f2f5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  h1 {
+      color: #333;
+      margin-bottom: 5px;
+  }
+
+  #game-area {
+    width: 90%;
+    max-width: 400px;
+    height: 300px;
+    background-color: #fff;
+    border-radius: 15px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #333;
+    position: relative;
+    overflow: hidden;
+    border: 3px solid #ddd;
+    transition: border-color 0.1s, background-color 0.1s;
+  }
+
+  #game-area img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      border-radius: 12px;
+      display: none;
+      pointer-events: none;
+  }
+
+  #game-area.active {
+    cursor: pointer;
+  }
+  
+  #game-area.miss-flash {
+    border-color: #ff3838 !important;
+    background-color: #ffecec !important;
+  }
+  
+  #game-area.hit-flash {
+    border-color: #2ecc71 !important;
+    background-color: #e8f8f0 !important;
+  }
+
+  #start-btn {
+    margin-top: 30px;
+    padding: 15px 40px;
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: #fff;
+    background: linear-gradient(45deg, #ff6b6b, #ff8e53);
+    border: none;
+    border-radius: 50px;
+    box-shadow: 0 4px 10px rgba(255, 107, 107, 0.3);
+    cursor: pointer;
+    transition: transform 0.1s;
+  }
+  #start-btn:active {
+    transform: scale(0.95);
+  }
+  #start-btn:disabled {
+      opacity: 0.5;
+      cursor: default;
+  }
+
+  #result-area {
+    margin-top: 20px;
+    text-align: center;
+    display: none;
+  }
+  .result-text {
+      font-size: 1.1rem;
+      margin: 5px 0;
+  }
+  .score {
+      font-size: 1.8rem;
+      font-weight: bold;
+      color: #ff6b6b;
+  }
+
+  #status-message {
+      font-weight: bold;
+      margin-bottom: 10px;
+      height: 20px;
+      color: #333;
+  }
+
+  #countdown {
+      position: absolute;
+      font-size: 4rem;
+      color: #ff6b6b;
+      display: none;
+  }
 </style>
 </head>
 <body>
 
 <h1>よちゲーム！</h1>
-<div id="status">スタートボタンを押してね</div>
+
+<div id="status-message">スタートを押してください</div>
+
 <div id="game-area">
-  <span id="placeholder">画像表示エリア</span>
+    <img id="display-image" src="" alt="表示画像">
+    <div id="countdown"></div>
 </div>
 
-<button id="action-btn" class="btn" onclick="startGame()">スタート</button>
-<button id="tap-btn" class="btn hidden" onclick="handleTap()">彼女だ！(タップ)</button>
+<button id="start-btn">スタート！</button>
 
-<div id="result"></div>
+<div id="result-area">
+  <h2>結果発表</h2>
+  <p class="result-text">平均反応速度: <span id="avg-speed" class="score">0.000</span> 秒</p>
+  <p class="result-text">お手つき回数: <span id="miss-count" class="score">0</span> 回</p>
+</div>
+
 
 <script>
-  // 設定：ファイル名を3枚に変更済み
-  const targetImage = 'target.png'; // 彼女
+  // ▼▼▼ 画像設定 ▼▼▼
+  const targetImages = ['target.png']; // 彼女
   const otherImages = ['other1.png', 'other2.png', 'other3.png']; // 違う人
-
-  let isPlaying = false;
-  let currentImage = '';
-  let startTime = 0;
-  let reactionTimes = [];
-  let mistakeCount = 0;
-  let roundCount = 0;
-  const maxRounds = 10; // 10回勝負
-  let waitTimeout;
+  // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   const gameArea = document.getElementById('game-area');
-  const actionBtn = document.getElementById('action-btn');
-  const tapBtn = document.getElementById('tap-btn');
-  const statusDiv = document.getElementById('status');
-  const resultDiv = document.getElementById('result');
+  const displayImage = document.getElementById('display-image');
+  const startBtn = document.getElementById('start-btn');
+  const resultArea = document.getElementById('result-area');
+  const avgSpeedSpan = document.getElementById('avg-speed');
+  const missCountSpan = document.getElementById('miss-count');
+  const countdownSpan = document.getElementById('countdown');
+  const statusMessage = document.getElementById('status-message');
+
+  let isPlaying = false;
+  let waitingForReaction = false;
+  let currentTargetIsTarget = false;
+  let startTime = 0;
+  let reactionTimes = [];
+  let missCount = 0;
+  let trialCount = 0;
+  const maxTrials = 10;
+  let trialTimeout;
+
+  startBtn.addEventListener('click', startGame);
+  gameArea.addEventListener('touchstart', handleTap); 
+  gameArea.addEventListener('mousedown', handleTap); 
 
   function startGame() {
-    isPlaying = true;
+    if (isPlaying) return;
+    
+    startBtn.disabled = true;
+    startBtn.textContent = "ゲーム中...";
+    resultArea.style.display = 'none';
     reactionTimes = [];
-    mistakeCount = 0;
-    roundCount = 0;
-    resultDiv.innerHTML = '';
-    actionBtn.classList.add('hidden');
-    tapBtn.classList.remove('hidden'); 
-    tapBtn.innerText = "彼女だ！(タップ)";
-    nextRound();
+    missCount = 0;
+    trialCount = 0;
+    displayImage.style.display = 'none';
+    statusMessage.textContent = '準備中...';
+    
+    let count = 3;
+    countdownSpan.style.display = 'block';
+    countdownSpan.textContent = count;
+    
+    const countTimer = setInterval(() => {
+        count--;
+        if(count > 0) {
+            countdownSpan.textContent = count;
+        } else {
+            clearInterval(countTimer);
+            countdownSpan.style.display = 'none';
+            isPlaying = true;
+            nextTrial();
+        }
+    }, 1000);
   }
 
-  function nextRound() {
-    if (roundCount >= maxRounds) {
+  function nextTrial() {
+    if (trialCount >= maxTrials) {
       endGame();
       return;
     }
-    roundCount++;
-    statusDiv.innerText = '第 ' + roundCount + ' 問目...';
-    gameArea.innerHTML = ''; // 画像クリア
-    
-    // ランダムな待ち時間 (0.5秒〜2秒)
-    const delay = Math.floor(Math.random() * 1500) + 500;
-    
-    waitTimeout = setTimeout(() => {
-      showImage();
-    }, delay);
+
+    trialCount++;
+    waitingForReaction = false;
+    gameArea.classList.remove('active', 'hit-flash', 'miss-flash');
+    displayImage.style.display = 'none';
+
+    const waitTime = Math.random() * 2000 + 1000;
+    statusMessage.textContent = `第 ${trialCount} 問目...`;
+
+    trialTimeout = setTimeout(() => {
+      currentTargetIsTarget = Math.random() < 0.5;
+      
+      let imageUrl;
+      if (currentTargetIsTarget) {
+        imageUrl = targetImages[Math.floor(Math.random() * targetImages.length)];
+      } else {
+        imageUrl = otherImages[Math.floor(Math.random() * otherImages.length)];
+      }
+      displayImage.src = imageUrl;
+      displayImage.style.display = 'block';
+
+      gameArea.classList.add('active');
+      startTime = Date.now();
+      waitingForReaction = true;
+
+      // 見逃し判定（1秒）
+      trialTimeout = setTimeout(() => {
+          if(waitingForReaction) {
+            waitingForReaction = false;
+            
+            if(currentTargetIsTarget) {
+                missCount++;
+                statusMessage.textContent = '見逃し！ミスです';
+                flashArea('miss-flash'); 
+            } else {
+                statusMessage.textContent = 'スルー成功！';
+            }
+            setTimeout(nextTrial, 700);
+          }
+      }, 1000); // 1秒設定
+
+    }, waitTime);
   }
 
-  function showImage() {
-    // 50%の確率でターゲット、50%でその他
-    const isTarget = Math.random() < 0.5;
-    
-    if (isTarget) {
-      currentImage = targetImage;
+  function handleTap(e) {
+    if (e.type === 'mousedown' && e.button !== 0) return; 
+
+    e.preventDefault();
+    if (!isPlaying || !waitingForReaction) return;
+
+    const endTime = Date.now();
+    const reactionTime = (endTime - startTime) / 1000;
+    waitingForReaction = false;
+    clearTimeout(trialTimeout);
+
+    if (currentTargetIsTarget) {
+      reactionTimes.push(reactionTime);
+      statusMessage.textContent = 'ナイス！ ' + reactionTime.toFixed(3) + '秒';
+      flashArea('hit-flash');
     } else {
-      // 3枚の中からランダムに選択
-      const randIndex = Math.floor(Math.random() * otherImages.length);
-      currentImage = otherImages[randIndex];
+      missCount++;
+      statusMessage.textContent = 'お手つき！ミスです';
+      flashArea('miss-flash');
     }
-
-    const img = document.createElement('img');
-    img.src = currentImage;
-    img.alt = "画像";
-    gameArea.appendChild(img);
     
-    startTime = Date.now();
-
-    // 違う人の場合、2秒以内にタップしなければ正解として次へ
-    if (!isTarget) {
-      waitTimeout = setTimeout(() => {
-        if(isPlaying && currentImage !== targetImage) {
-           // スルー成功
-           nextRound();
-        }
-      }, 2000); // 2秒表示してタップされなければ次へ
-    }
+    setTimeout(nextTrial, 700);
   }
+  
+  function flashArea(type) {
+      gameArea.classList.add(type);
+      setTimeout(() => {
+          gameArea.classList.remove(type);
+      }, 300);
+  }
+
+  function endGame() {
+    isPlaying = false;
+    startBtn.disabled = false;
+    startBtn.textContent = "もう一度チャレンジ";
+    
+    let avgSpeed = 0;
+    if (reactionTimes.length > 0) {
+        const sum = reactionTimes.reduce((a, b) => a + b, 0);
+        avgSpeed = sum / reactionTimes.length;
+    }
+
+    avgSpeedSpan.textContent = avgSpeed.toFixed(3);
+    missCountSpan.textContent = missCount;
+    resultArea.style.display = 'block';
+    statusMessage.textContent = 'ゲーム終了！';
+  }
+</script>
+</body>
+</html>
