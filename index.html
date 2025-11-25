@@ -40,6 +40,8 @@
     overflow: hidden;
     border: 3px solid #ddd;
     transition: border-color 0.1s, background-color 0.1s;
+    /* 画像のレンダリングを最適化 */
+    transform: translateZ(0); 
   }
 
   #game-area img {
@@ -71,19 +73,28 @@
     font-size: 1.2rem;
     font-weight: bold;
     color: #fff;
-    background: linear-gradient(45deg, #ff6b6b, #ff8e53);
+    background: #ccc; /* ロード完了までグレー */
     border: none;
     border-radius: 50px;
+    box-shadow: none;
+    cursor: default;
+    transition: all 0.3s;
+  }
+  
+  /* ロード完了後のボタンスタイル */
+  #start-btn.ready {
+    background: linear-gradient(45deg, #ff6b6b, #ff8e53);
     box-shadow: 0 4px 10px rgba(255, 107, 107, 0.3);
     cursor: pointer;
-    transition: transform 0.1s;
   }
+
   #start-btn:active {
     transform: scale(0.95);
   }
   #start-btn:disabled {
       opacity: 0.5;
       cursor: default;
+      transform: none;
   }
 
   #result-area {
@@ -120,14 +131,14 @@
 
 <h1>よちゲーム！</h1>
 
-<div id="status-message">スタートを押してください</div>
+<div id="status-message">画像を読み込んでいます...</div>
 
 <div id="game-area">
     <img id="display-image" src="" alt="表示画像">
     <div id="countdown"></div>
 </div>
 
-<button id="start-btn">スタート！</button>
+<button id="start-btn" disabled>読み込み中...</button>
 
 <div id="result-area">
   <h2>結果発表</h2>
@@ -138,8 +149,8 @@
 
 <script>
   // ▼▼▼ 画像設定 ▼▼▼
-  const targetImages = ['target.png']; // 彼女
-  const otherImages = ['other1.png', 'other2.png', 'other3.png']; // 違う人
+  const targetImages = ['target.png']; 
+  const otherImages = ['other1.png', 'other2.png', 'other3.png'];
   // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
   const gameArea = document.getElementById('game-area');
@@ -161,6 +172,49 @@
   const maxTrials = 10;
   let trialTimeout;
 
+  // --- 画像先読み処理 (ここが修正ポイント) ---
+  const allImagePaths = [...targetImages, ...otherImages];
+  let loadedCount = 0;
+  const preloadedImages = [];
+
+  function preloadImages() {
+    if(allImagePaths.length === 0) {
+        enableStartBtn();
+        return;
+    }
+
+    allImagePaths.forEach(path => {
+        const img = new Image();
+        img.src = path;
+        img.onload = () => {
+            loadedCount++;
+            if(loadedCount === allImagePaths.length) {
+                enableStartBtn();
+            }
+        };
+        img.onerror = () => {
+            // 画像が見つからなくてもとりあえず進める
+            console.error("画像が見つかりません: " + path);
+            loadedCount++;
+            if(loadedCount === allImagePaths.length) {
+                enableStartBtn();
+            }
+        };
+        preloadedImages.push(img); // メモリに保持
+    });
+  }
+
+  function enableStartBtn() {
+      startBtn.disabled = false;
+      startBtn.classList.add('ready');
+      startBtn.textContent = "スタート！";
+      statusMessage.textContent = "準備完了！";
+  }
+
+  // ページ読み込み時に実行
+  preloadImages();
+  // ------------------------------------------
+
   startBtn.addEventListener('click', startGame);
   gameArea.addEventListener('touchstart', handleTap); 
   gameArea.addEventListener('mousedown', handleTap); 
@@ -169,6 +223,7 @@
     if (isPlaying) return;
     
     startBtn.disabled = true;
+    startBtn.classList.remove('ready');
     startBtn.textContent = "ゲーム中...";
     resultArea.style.display = 'none';
     reactionTimes = [];
@@ -217,14 +272,28 @@
       } else {
         imageUrl = otherImages[Math.floor(Math.random() * otherImages.length)];
       }
+      
+      // 画像ソースをセットして表示
       displayImage.src = imageUrl;
       displayImage.style.display = 'block';
 
       gameArea.classList.add('active');
-      startTime = Date.now();
-      waitingForReaction = true;
+      
+      // 表示タイミングをブラウザの描画に合わせる（より正確に）
+      requestAnimationFrame(() => {
+          setTimeout(() => {
+              startTime = Date.now();
+              waitingForReaction = true;
+              
+              // 見逃し判定（1秒）
+              startMissTimeout();
+          }, 0);
+      });
 
-      // 見逃し判定（1秒）
+    }, waitTime);
+  }
+
+  function startMissTimeout() {
       trialTimeout = setTimeout(() => {
           if(waitingForReaction) {
             waitingForReaction = false;
@@ -239,8 +308,6 @@
             setTimeout(nextTrial, 700);
           }
       }, 1000); // 1秒設定
-
-    }, waitTime);
   }
 
   function handleTap(e) {
@@ -277,6 +344,7 @@
   function endGame() {
     isPlaying = false;
     startBtn.disabled = false;
+    startBtn.classList.add('ready');
     startBtn.textContent = "もう一度チャレンジ";
     
     let avgSpeed = 0;
