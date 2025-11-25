@@ -1,266 +1,107 @@
-<!DOCTYPE html>
+<!DOCT<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>反射神経テスト：彼女を探せ！</title>
+<title>よちゲーム！</title>
 <style>
-  body {
-    margin: 0;
-    font-family: sans-serif;
-    background-color: #f0f2f5;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 100vh;
-    /* タップ時のハイライトを無効化 */
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-  }
-
-  #game-area {
-    width: 90%;
-    max-width: 400px;
-    height: 300px;
-    background-color: #fff;
-    border-radius: 15px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    font-size: 2rem;
-    font-weight: bold;
-    color: #333;
-    position: relative;
-    overflow: hidden;
-    border: 3px solid #ddd;
-    transition: border-color 0.1s, background-color 0.1s;
-  }
-
-  /* タップ可能な状態 */
-  #game-area.active {
-    cursor: pointer;
-  }
-  
-  /* お手付き時の演出（赤くフラッシュ） */
-  #game-area.miss {
-    border-color: #ff3838 !important;
-    background-color: #ffecec !important;
-    color: #ff3838 !important;
-  }
-  
-  /* 正解時の演出（青くフラッシュ） */
-  #game-area.hit {
-    border-color: #2ecc71 !important;
-    background-color: #e8f8f0 !important;
-     color: #2ecc71 !important;
-  }
-
-  #start-btn {
-    margin-top: 30px;
-    padding: 15px 40px;
-    font-size: 1.2rem;
-    font-weight: bold;
-    color: #fff;
-    background: linear-gradient(45deg, #ff6b6b, #ff8e53);
-    border: none;
-    border-radius: 50px;
-    box-shadow: 0 4px 10px rgba(255, 107, 107, 0.3);
-    cursor: pointer;
-    transition: transform 0.1s;
-  }
-  #start-btn:active {
-    transform: scale(0.95);
-  }
-  #start-btn:disabled {
-      opacity: 0.5;
-      cursor: default;
-  }
-
-  #result-area {
-    margin-top: 20px;
-    text-align: center;
-    display: none; /* 最初は隠しておく */
-  }
-  .result-text {
-      font-size: 1.1rem;
-      margin: 5px 0;
-  }
-  .score {
-      font-size: 1.8rem;
-      font-weight: bold;
-      color: #ff6b6b;
-  }
-
-  /* カウントダウン表示 */
-  #countdown {
-      position: absolute;
-      font-size: 4rem;
-      color: #ff6b6b;
-      display: none;
-  }
+  body { font-family: sans-serif; text-align: center; padding: 20px; background-color: #f0f0f0; }
+  #game-area { width: 100%; height: 300px; background: #fff; display: flex; align-items: center; justify-content: center; border: 2px solid #333; margin-bottom: 20px; overflow: hidden; }
+  img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .btn { padding: 15px 30px; font-size: 18px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+  .hidden { display: none; }
+  #status { font-size: 20px; font-weight: bold; margin-bottom: 10px; }
+  #result { margin-top: 20px; font-weight: bold; color: #d32f2f; }
 </style>
 </head>
 <body>
 
+<h1>よちゲーム！</h1>
+<div id="status">スタートボタンを押してね</div>
 <div id="game-area">
-    <span id="display-text">ここに表示されます</span>
-    <div id="countdown"></div>
+  <span id="placeholder">画像表示エリア</span>
 </div>
 
-<button id="start-btn">スタート！</button>
+<button id="action-btn" class="btn" onclick="startGame()">スタート</button>
+<button id="tap-btn" class="btn hidden" onclick="handleTap()">彼女だ！(タップ)</button>
 
-<div id="result-area">
-  <h2>結果発表</h2>
-  <p class="result-text">平均反応速度: <span id="avg-speed" class="score">0.000</span> 秒</p>
-  <p class="result-text">お手付き回数: <span id="miss-count" class="score">0</span> 回</p>
-</div>
-
+<div id="result"></div>
 
 <script>
-  const gameArea = document.getElementById('game-area');
-  const displayText = document.getElementById('display-text');
-  const startBtn = document.getElementById('start-btn');
-  const resultArea = document.getElementById('result-area');
-  const avgSpeedSpan = document.getElementById('avg-speed');
-  const missCountSpan = document.getElementById('miss-count');
-  const countdownSpan = document.getElementById('countdown');
+  // 設定：ファイル名を3枚に変更済み
+  const targetImage = 'target.png'; // 彼女
+  const otherImages = ['other1.png', 'other2.png', 'other3.png']; // 違う人
 
   let isPlaying = false;
-  let canTap = false;
-  let currentTargetIsTarget = false; // 今表示されているのが「彼女」かどうか
-  let startTime;
+  let currentImage = '';
+  let startTime = 0;
   let reactionTimes = [];
-  let missCount = 0;
-  let trialCount = 0;
-  const maxTrials = 10; // 全10回
-  let trialTimeout;
+  let mistakeCount = 0;
+  let roundCount = 0;
+  const maxRounds = 10; // 10回勝負
+  let waitTimeout;
 
-  // ゲーム開始
-  startBtn.addEventListener('click', startGame);
-
-  // 画面タップ判定
-  gameArea.addEventListener('touchstart', handleTap); // スマホ用
-  gameArea.addEventListener('mousedown', handleTap);  // PC用
+  const gameArea = document.getElementById('game-area');
+  const actionBtn = document.getElementById('action-btn');
+  const tapBtn = document.getElementById('tap-btn');
+  const statusDiv = document.getElementById('status');
+  const resultDiv = document.getElementById('result');
 
   function startGame() {
-    startBtn.disabled = true;
-    startBtn.textContent = "ゲーム中...";
-    resultArea.style.display = 'none';
+    isPlaying = true;
     reactionTimes = [];
-    missCount = 0;
-    trialCount = 0;
-    displayText.textContent = "";
-    
-    // カウントダウン開始
-    let count = 3;
-    countdownSpan.style.display = 'block';
-    countdownSpan.textContent = count;
-    
-    const countTimer = setInterval(() => {
-        count--;
-        if(count > 0) {
-            countdownSpan.textContent = count;
-        } else {
-            clearInterval(countTimer);
-            countdownSpan.style.display = 'none';
-            isPlaying = true;
-            nextTrial();
-        }
-    }, 1000);
+    mistakeCount = 0;
+    roundCount = 0;
+    resultDiv.innerHTML = '';
+    actionBtn.classList.add('hidden');
+    tapBtn.classList.remove('hidden'); 
+    tapBtn.innerText = "彼女だ！(タップ)";
+    nextRound();
   }
 
-  function nextTrial() {
-    if (trialCount >= maxTrials) {
+  function nextRound() {
+    if (roundCount >= maxRounds) {
       endGame();
       return;
     }
-
-    trialCount++;
-    canTap = false;
-    gameArea.classList.remove('active');
-    displayText.textContent = ""; // 一旦クリア
-
-    // ランダムな待ち時間（1秒〜3秒）
-    const waitTime = Math.random() * 2000 + 1000;
-
-    trialTimeout = setTimeout(() => {
-      // 50%の確率で「彼女」を表示
-      currentTargetIsTarget = Math.random() < 0.5;
-      
-      if (currentTargetIsTarget) {
-        displayText.textContent = "👩 彼女！"; // ここを画像タグに変える
-      } else {
-        displayText.textContent = "👤 違う人"; // ここを画像タグに変える
-      }
-      
-      gameArea.classList.add('active');
-      startTime = Date.now();
-      canTap = true;
-
-      // 2秒以内にタップされなかったら次へ（スルー判定）
-      trialTimeout = setTimeout(() => {
-          if(canTap) {
-            // 彼女だったのに見逃した
-            if(currentTargetIsTarget) {
-                missCount++;
-                flashArea('miss');
-            }
-            nextTrial();
-          }
-      }, 2000);
-
-    }, waitTime);
+    roundCount++;
+    statusDiv.innerText = '第 ' + roundCount + ' 問目...';
+    gameArea.innerHTML = ''; // 画像クリア
+    
+    // ランダムな待ち時間 (0.5秒〜2秒)
+    const delay = Math.floor(Math.random() * 1500) + 500;
+    
+    waitTimeout = setTimeout(() => {
+      showImage();
+    }, delay);
   }
 
-  function handleTap(e) {
-    e.preventDefault(); // ダブルタップ拡大などを防ぐ
-    if (!isPlaying || !canTap) return;
-
-    const endTime = Date.now();
-    const reactionTime = (endTime - startTime) / 1000; // 秒に変換
-    canTap = false;
-    clearTimeout(trialTimeout); // スルー判定タイマーを解除
-
-    if (currentTargetIsTarget) {
-      // 正解（彼女をタップ）
-      reactionTimes.push(reactionTime);
-      flashArea('hit');
+  function showImage() {
+    // 50%の確率でターゲット、50%でその他
+    const isTarget = Math.random() < 0.5;
+    
+    if (isTarget) {
+      currentImage = targetImage;
     } else {
-      // お手付き（違う人をタップ）
-      missCount++;
-      flashArea('miss');
-    }
-    
-    // 少し待ってから次へ
-    setTimeout(nextTrial, 500);
-  }
-  
-  // 画面をフラッシュさせる演出
-  function flashArea(type) {
-      gameArea.classList.add(type);
-      setTimeout(() => {
-          gameArea.classList.remove(type);
-      }, 300);
-  }
-
-  function endGame() {
-    isPlaying = false;
-    startBtn.disabled = false;
-    startBtn.textContent = "もう一度チャレンジ";
-    
-    // 平均タイム計算
-    let avgSpeed = 0;
-    if (reactionTimes.length > 0) {
-        const sum = reactionTimes.reduce((a, b) => a + b, 0);
-        avgSpeed = sum / reactionTimes.length;
+      // 3枚の中からランダムに選択
+      const randIndex = Math.floor(Math.random() * otherImages.length);
+      currentImage = otherImages[randIndex];
     }
 
-    avgSpeedSpan.textContent = avgSpeed.toFixed(3); // 小数点第3位まで
-    missCountSpan.textContent = missCount;
-    resultArea.style.display = 'block';
+    const img = document.createElement('img');
+    img.src = currentImage;
+    img.alt = "画像";
+    gameArea.appendChild(img);
+    
+    startTime = Date.now();
+
+    // 違う人の場合、2秒以内にタップしなければ正解として次へ
+    if (!isTarget) {
+      waitTimeout = setTimeout(() => {
+        if(isPlaying && currentImage !== targetImage) {
+           // スルー成功
+           nextRound();
+        }
+      }, 2000); // 2秒表示してタップされなければ次へ
+    }
   }
-</script>
-</body>
-</html>
